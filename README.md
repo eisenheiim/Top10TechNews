@@ -1,12 +1,12 @@
 # Top10TechNews
 
-A daily AI / tech digest that turns noisy Hacker News and RSS feeds into a clear **top 10** brief.
+A daily AI / tech digest that turns noisy Hacker News and RSS feeds into a clear **top 10** brief — orchestrated with **[LangGraph](https://langchain-ai.github.io/langgraph/)**.
 
 **Who it's for:** builders, PMs, and researchers who want the signal without scrolling every source.
 
 **Problem it solves:** AI news moves fast and spreads across many feeds. Top10TechNews collects recent updates, sorts them into research / product / tools, rewrites them for skimability, and publishes one short summary you can read in a few minutes.
 
-A small web UI shows the summary and items in a three-column grid. Digests refresh automatically each day via GitHub Actions and are archived under `history/`.
+The pipeline is a **LangGraph** state machine: each stage (collect → classify → rewrite → summarize → revise → assemble) is a graph node, with a revision gate that loops once before the final digest is assembled. A small web UI shows the summary and items in a three-column grid. Digests refresh automatically each day via GitHub Actions and are archived under `history/`.
 
 ## How it works
 
@@ -26,16 +26,6 @@ flowchart LR
   Gate -->|final| Assemble[Assemble]
   Assemble --> End([End])
 ```
-
-| Step | What happens |
-|------|----------------|
-| Collect | Pull from Hacker News + RSS into a short buffer |
-| Classify | Tag each item: research / product / tools |
-| Rewrite | Parallel per-category rewrites (short, readable) |
-| Summarize | Draft the brief; after revise, regenerate once with recommendations |
-| Revision pass | Draft → revise; after one pass → assemble |
-| Revise | Keep exactly 10, drop noise, emit recommendations |
-| Assemble | Build the UI payload (and optional history file) |
 
 Daily digests run on a GitHub Actions schedule so the site stays current without a manual refresh.
 
