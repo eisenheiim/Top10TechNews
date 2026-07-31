@@ -1,13 +1,15 @@
-"""AI digest: HN + RSS collect → summarize → rewrite → UI payload."""
+"""AI digest: collect → classify → rewrite routes → summarize → revise → UI."""
 
 from __future__ import annotations
 
 import json
+import operator
 import os
 import re
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, TypedDict
+from pathlib import Path
+from typing import Annotated, Any, Literal, TypedDict
 from xml.etree import ElementTree as ET
 
 import httpx
@@ -18,9 +20,11 @@ from pydantic import BaseModel, Field
 
 load_dotenv()
 
-MAX_ITEMS = 10
-HN_COUNT = 5
-RSS_COUNT = 5
+TARGET_ITEMS = 10
+COLLECT_ITEMS = 14
+HN_COUNT = 8
+RSS_COUNT = 8
+Category = Literal["research", "product", "tools"]
 
 RSS_FEEDS = [
     ("OpenAI", "https://openai.com/news/rss.xml"),
@@ -32,6 +36,14 @@ RSS_FEEDS = [
 
 HN_API = "https://hn.algolia.com/api/v1/search_by_date"
 HN_QUERY = "AI LLM GPT Claude"
+def _data_dir() -> Path:
+    # Vercel filesystem is read-only except /tmp
+    if os.getenv("VERCEL"):
+        return Path("/tmp/top10technews")
+    return Path(__file__).parent
+
+
+HISTORY_DIR = _data_dir() / "history"
 
 
 class Item(TypedDict):
@@ -40,6 +52,7 @@ class Item(TypedDict):
     text: str
     created_at: str
     url: str
+    category: Category
 
 
 class RewrittenItem(TypedDict):
@@ -47,15 +60,29 @@ class RewrittenItem(TypedDict):
     source: str
     url: str
     created_at: str
+    category: Category
     original: str
     rewritten: str
 
 
 class GraphState(TypedDict):
     items: list[Item]
+    rewritten: Annotated[list[RewrittenItem], operator.add]
+    final_items: list[RewrittenItem]
     summary: str
-    rewritten: list[RewrittenItem]
+    recommendations: list[str]
+    dropped: list[RewrittenItem]
+    revision_pass: int
     ui_payload: dict[str, Any]
+
+
+class ClassifyItem(BaseModel):
+    id: str
+    category: Category
+
+
+class ClassifyBatch(BaseModel):
+    items: list[ClassifyItem]
 
 
 class RewriteItem(BaseModel):
@@ -65,6 +92,14 @@ class RewriteItem(BaseModel):
 
 class RewriteBatch(BaseModel):
     items: list[RewriteItem]
+
+
+class ReviseResult(BaseModel):
+    keep_ids: list[str] = Field(description="Item ids worth keeping in the digest")
+    drop_ids: list[str] = Field(description="Noisy / low-signal item ids to drop")
+    recommendations: list[str] = Field(
+        description="Concrete recommendations for regenerating a better summary"
+    )
 
 
 def _llm() -> ChatOpenAI:
@@ -114,6 +149,7 @@ def _collect_hn(client: httpx.Client, limit: int) -> list[Item]:
                 "text": title,
                 "created_at": _parse_date(hit.get("created_at")),
                 "url": url,
+                "category": "tools",
             }
         )
     return items[:limit]
@@ -124,7 +160,6 @@ def _local(tag: str) -> str:
 
 
 def _collect_rss(client: httpx.Client, limit: int) -> list[Item]:
-    """Her feed'den 1 item al; yetmezse sırayla 2. item'lara geç."""
     per_feed: list[list[Item]] = []
 
     for source, feed_url in RSS_FEEDS:
@@ -136,12 +171,9 @@ def _collect_rss(client: httpx.Client, limit: int) -> list[Item]:
             continue
 
         entries: list[Item] = []
-        nodes = list(root.iter())
-        # RSS <item> veya Atom <entry>
-        candidates = [n for n in nodes if _local(n.tag) in {"item", "entry"}]
+        candidates = [n for n in root.iter() if _local(n.tag) in {"item", "entry"}]
         for node in candidates[:2]:
             fields = {_local(c.tag): (c.text or "").strip() for c in list(node)}
-            # Atom link href
             if "link" not in fields or not fields["link"]:
                 for c in list(node):
                     if _local(c.tag) == "link":
@@ -170,6 +202,7 @@ def _collect_rss(client: httpx.Client, limit: int) -> list[Item]:
                     "text": text[:1200],
                     "created_at": _parse_date(pub),
                     "url": link,
+                    "category": "product",
                 }
             )
         if entries:
@@ -195,56 +228,161 @@ def collect_items(state: GraphState) -> dict[str, Any]:
         hn = _collect_hn(client, HN_COUNT)
         rss = _collect_rss(client, RSS_COUNT)
 
-    items = (hn + rss)[:MAX_ITEMS]
+    items = (hn + rss)[:COLLECT_ITEMS]
     if not items:
         raise RuntimeError("No content collected from HN/RSS.")
     return {"items": items}
 
 
-def summarize(state: GraphState) -> dict[str, Any]:
-    lines = [f"[{i['source']}] {i['text']}" for i in state["items"]]
+def classify_items(state: GraphState) -> dict[str, Any]:
+    payload = [{"id": i["id"], "source": i["source"], "text": i["text"]} for i in state["items"]]
     prompt = (
-        "Write one short English paragraph summarizing these recent AI headlines. "
-        "Keep it concise and highlight the main developments.\n\n"
-        + "\n\n".join(lines)
+        "Classify each AI news item into exactly one category:\n"
+        "- research: papers, models, scientific results, benchmarks\n"
+        "- product: company launches, APIs, product updates, policy/business\n"
+        "- tools: developer tools, open-source projects, Show HN, utilities\n\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
     )
-    msg = _llm().invoke(prompt)
-    return {"summary": str(msg.content).strip()}
+    batch = _llm().with_structured_output(ClassifyBatch).invoke(prompt)
+    by_id = {row.id: row.category for row in batch.items}
+    items: list[Item] = [
+        {**item, "category": by_id.get(item["id"], item.get("category", "tools"))}
+        for item in state["items"]
+    ]
+    return {"items": items}
 
 
-def rewrite_items(state: GraphState) -> dict[str, Any]:
+def _rewrite_category(state: GraphState, category: Category) -> dict[str, Any]:
+    subset = [i for i in state["items"] if i.get("category") == category]
+    if not subset:
+        return {"rewritten": []}
+
     payload = [
-        {"id": i["id"], "source": i["source"], "text": i["text"]}
-        for i in state["items"]
+        {"id": i["id"], "source": i["source"], "text": i["text"], "category": category}
+        for i in subset
     ]
     prompt = (
-        "Rewrite each item in clear, readable English. "
+        f"Rewrite each {category} item in clear, readable English. "
         "Use at most 3-4 sentences per item. Keep the meaning; do not exaggerate.\n\n"
         f"{json.dumps(payload, ensure_ascii=False)}"
     )
-    structured = _llm().with_structured_output(RewriteBatch)
-    batch = structured.invoke(prompt)
-    by_id = {item.id: item.rewritten for item in batch.items}
-
+    batch = _llm().with_structured_output(RewriteBatch).invoke(prompt)
+    by_id = {row.id: row.rewritten for row in batch.items}
     rewritten: list[RewrittenItem] = [
         {
             "id": i["id"],
             "source": i["source"],
             "url": i["url"],
             "created_at": i["created_at"],
+            "category": category,
             "original": i["text"],
             "rewritten": by_id.get(i["id"], i["text"]),
         }
-        for i in state["items"]
+        for i in subset
     ]
     return {"rewritten": rewritten}
 
 
+def rewrite_research(state: GraphState) -> dict[str, Any]:
+    return _rewrite_category(state, "research")
+
+
+def rewrite_product(state: GraphState) -> dict[str, Any]:
+    return _rewrite_category(state, "product")
+
+
+def rewrite_tools(state: GraphState) -> dict[str, Any]:
+    return _rewrite_category(state, "tools")
+
+
+def summarize(state: GraphState) -> dict[str, Any]:
+    source_items = state.get("final_items") or state.get("rewritten") or []
+    lines = [
+        f"[{i['category']}] [{i['source']}] {i['rewritten']}"
+        for i in source_items
+    ]
+    if not lines:
+        return {"summary": "No items to summarize."}
+
+    recommendations = state.get("recommendations") or []
+    if recommendations:
+        prompt = (
+            "Write one short English paragraph summarizing these AI updates.\n"
+            "Apply the editor recommendations below. Only cover the listed items. "
+            "Keep it concise.\n\n"
+            f"Recommendations:\n{json.dumps(recommendations, ensure_ascii=False)}\n\n"
+            f"Items:\n" + "\n\n".join(lines)
+        )
+    else:
+        prompt = (
+            "Write one short English paragraph summarizing these recent AI updates. "
+            "Cover research, product, and tools if present. Keep it concise.\n\n"
+            + "\n\n".join(lines)
+        )
+    msg = _llm().invoke(prompt)
+    return {"summary": str(msg.content).strip()}
+
+
+def revise(state: GraphState) -> dict[str, Any]:
+    payload = {
+        "summary": state["summary"],
+        "items": [
+            {
+                "id": i["id"],
+                "category": i["category"],
+                "source": i["source"],
+                "rewritten": i["rewritten"],
+            }
+            for i in state["rewritten"]
+        ],
+    }
+    prompt = (
+        "You are a digest editor. Review the draft summary and items.\n"
+        f"1) Keep exactly {TARGET_ITEMS} strongest AI/tech news items.\n"
+        "2) Drop noisy, redundant, off-topic, or low-signal items.\n"
+        "3) Give concrete recommendations so summarize can regenerate a better summary.\n"
+        "Do not write the final summary yourself.\n\n"
+        f"{json.dumps(payload, ensure_ascii=False)}"
+    )
+    result = _llm().with_structured_output(ReviseResult).invoke(prompt)
+    by_id = {i["id"]: i for i in state["rewritten"]}
+    kept = [by_id[i] for i in result.keep_ids if i in by_id]
+    # Ensure exactly TARGET_ITEMS when possible
+    if len(kept) < TARGET_ITEMS:
+        for item in state["rewritten"]:
+            if item["id"] not in {k["id"] for k in kept}:
+                kept.append(item)
+            if len(kept) >= TARGET_ITEMS:
+                break
+    kept = kept[:TARGET_ITEMS]
+    kept_ids = {i["id"] for i in kept}
+    dropped = [i for i in state["rewritten"] if i["id"] not in kept_ids]
+    return {
+        "final_items": kept,
+        "dropped": dropped,
+        "recommendations": result.recommendations,
+        "revision_pass": 1,
+    }
+
+
+def route_after_summarize(state: GraphState) -> str:
+    if state.get("revision_pass", 0) >= 1:
+        return "assemble_ui_payload"
+    return "revise"
+
+
 def assemble_ui_payload(state: GraphState) -> dict[str, Any]:
+    items = state.get("final_items") or state.get("rewritten") or []
+    order = {"research": 0, "product": 1, "tools": 2}
+    items = sorted(items, key=lambda i: (order.get(i.get("category", "tools"), 9), i["source"]))
+    items = items[:TARGET_ITEMS]
     return {
         "ui_payload": {
             "summary": state["summary"],
-            "items": state["rewritten"],
+            "recommendations": state.get("recommendations") or [],
+            "items": items,
+            "dropped": state.get("dropped") or [],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     }
 
@@ -252,26 +390,57 @@ def assemble_ui_payload(state: GraphState) -> dict[str, Any]:
 def build_graph():
     g = StateGraph(GraphState)
     g.add_node("collect_items", collect_items)
+    g.add_node("classify_items", classify_items)
+    g.add_node("rewrite_research", rewrite_research)
+    g.add_node("rewrite_product", rewrite_product)
+    g.add_node("rewrite_tools", rewrite_tools)
     g.add_node("summarize", summarize)
-    g.add_node("rewrite_items", rewrite_items)
+    g.add_node("revise", revise)
     g.add_node("assemble_ui_payload", assemble_ui_payload)
 
     g.add_edge(START, "collect_items")
-    g.add_edge("collect_items", "summarize")
-    g.add_edge("summarize", "rewrite_items")
-    g.add_edge("rewrite_items", "assemble_ui_payload")
+    g.add_edge("collect_items", "classify_items")
+    g.add_edge("classify_items", "rewrite_research")
+    g.add_edge("classify_items", "rewrite_product")
+    g.add_edge("classify_items", "rewrite_tools")
+    g.add_edge("rewrite_research", "summarize")
+    g.add_edge("rewrite_product", "summarize")
+    g.add_edge("rewrite_tools", "summarize")
+    g.add_conditional_edges(
+        "summarize",
+        route_after_summarize,
+        {"revise": "revise", "assemble_ui_payload": "assemble_ui_payload"},
+    )
+    g.add_edge("revise", "summarize")
     g.add_edge("assemble_ui_payload", END)
     return g.compile()
 
 
-def run() -> dict[str, Any]:
+def save_history(payload: dict[str, Any], day: date | None = None) -> Path:
+    HISTORY_DIR.mkdir(parents=True, exist_ok=True)
+    day = day or date.today()
+    path = HISTORY_DIR / f"{day.isoformat()}.json"
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    latest = HISTORY_DIR / "latest.json"
+    latest.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    return path
+
+
+def run(save: bool = True) -> dict[str, Any]:
     app = build_graph()
     result = app.invoke(
         {
             "items": [],
-            "summary": "",
             "rewritten": [],
+            "final_items": [],
+            "summary": "",
+            "recommendations": [],
+            "dropped": [],
+            "revision_pass": 0,
             "ui_payload": {},
         }
     )
-    return result["ui_payload"]
+    payload = result["ui_payload"]
+    if save:
+        save_history(payload)
+    return payload

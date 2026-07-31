@@ -1,6 +1,8 @@
-# ConnectSummary
+# Top10TechNews
 
-LangGraph pipeline that collects recent AI updates from **Hacker News** and **RSS feeds**, summarizes them, rewrites each item into a clearer short explainer, and serves the result in a compact local UI.
+LangGraph pipeline that collects recent AI / tech updates from **Hacker News** and **RSS**, classifies them into **research / product / tools**, rewrites each route, drafts a summary, then **revises** (drops noisy items + recommendations) and loops back to **summarize** once for the final brief.
+
+The UI shows the summary and items in a 3-column card grid. Daily digests can be archived under `history/` via GitHub Actions.
 
 ## LangGraph
 
@@ -10,89 +12,73 @@ flowchart LR
 
   subgraph Collect["collect_items"]
     direction TB
-    HN["Hacker News<br/>5 stories"]
-    RSS["RSS feeds<br/>OpenAI · DeepMind · Google AI<br/>HF · MSR"]
-    Merge["merge · max 10"]
+    HN["Hacker News"]
+    RSS["RSS feeds"]
+    Merge["merge · keep 10"]
     HN --> Merge
     RSS --> Merge
   end
 
+  Classify[classify_items]
+
+  subgraph Routes["rewrite by category"]
+    direction TB
+    R[rewrite_research]
+    P[rewrite_product]
+    T[rewrite_tools]
+  end
+
   Summarize[summarize]
-  Rewrite[rewrite_items]
+  Gate{{"revision_pass?"}}
+  Revise[revise]
   Assemble[assemble_ui_payload]
   ENDNODE([End])
 
-  START --> Collect
-  Collect --> Summarize --> Rewrite --> Assemble --> ENDNODE
+  START --> Collect --> Classify
+  Classify --> R
+  Classify --> P
+  Classify --> T
+  R --> Summarize
+  P --> Summarize
+  T --> Summarize
+  Summarize --> Gate
+  Gate -->|"0 · draft"| Revise
+  Revise -->|"recommendations"| Summarize
+  Gate -->|"1 · final"| Assemble --> ENDNODE
 ```
 
 | Node | Role |
 |------|------|
-| `collect_items` | Fetch HN stories + RSS posts, merge up to 10 items |
-| `summarize` | One-paragraph English brief of all items |
-| `rewrite_items` | Rewrite each item in 3–4 clear sentences |
-| `assemble_ui_payload` | Build `{ summary, items }` for the UI |
+| `collect_items` | Fetch HN + RSS (buffer), then revise keeps exactly 10 |
+| `classify_items` | Label each item: research / product / tools |
+| `rewrite_research` / `rewrite_product` / `rewrite_tools` | Parallel rewrite routes (3–4 sentences) |
+| `summarize` | Draft summary, then regenerate once using revise recommendations |
+| `revision_pass?` | `0` → go to revise; `1` → go to assemble / end |
+| `revise` | Keep exactly 10 items, drop the rest, emit recommendations, loop back to summarize |
+| `assemble_ui_payload` | Build UI JSON + optional history file |
 
-## Setup
+## Daily schedule + archive
 
-Requirements: Python 3.12+, [uv](https://github.com/astral-sh/uv), OpenAI API key.
+`.github/workflows/daily-digest.yml` runs daily (and on `workflow_dispatch`), then commits digests to `history/YYYY-MM-DD.json` (+ `history/latest.json`).
 
-```bash
-cp .env.example .env
-# set OPENAI_API_KEY in .env
+## Deploy (Vercel)
 
-uv sync
-```
-
-`.env` example:
-
-```bash
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4o-mini
-```
-
-## Run
-
-CLI (prints JSON + writes `ui_payload.json`):
-
-```bash
-uv run python main.py
-```
-
-Local UI:
-
-```bash
-uv run python web.py
-```
-
-Open [http://127.0.0.1:8765](http://127.0.0.1:8765)
-
-- **Run** — execute the full pipeline
-- **Reload** — refresh the page from the last payload
-- **See LangGraph** — expand the graph diagram
+- Entrypoint: `app.py` (FastAPI)
+- Env: `OPENAI_API_KEY` (optional `OPENAI_MODEL`)
+- `vercel.json` sets `maxDuration: 300` for the pipeline
 
 ## Project layout
 
 ```text
-pipeline.py   # LangGraph state, nodes, edges
-main.py       # CLI entrypoint
-web.py        # local UI server
-.env.example  # env template (no secrets)
+app.py                              # FastAPI / Vercel entry
+pipeline.py                         # LangGraph state, nodes, edges
+main.py                             # CLI + history write
+web.py                              # HTML UI helpers + local server
+history/                            # digest archive
+.github/workflows/daily-digest.yml  # daily cron
+vercel.json                         # Vercel function config
+requirements.txt                    # Vercel install
 ```
-
-## Sources
-
-- Hacker News via Algolia API (`search_by_date`, AI-related stories)
-- RSS: OpenAI, Google DeepMind, Google AI, Hugging Face, Microsoft Research
-
-## Ideas / next steps
-
-- Deduplicate similar HN + RSS stories before summarize
-- Add scheduled runs (cron / GitHub Actions) and keep a history of digests
-- Topic filters (robots, research, product launches) with optional routing nodes
-- Human-in-the-loop: approve/edit rewritten items before publish
-- Deploy the UI (Fly/Railway) + persist payloads in SQLite
-- Optional Bluesky source alongside HN/RSS
 
 ## License
 

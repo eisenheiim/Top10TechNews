@@ -1,0 +1,6 @@
+---
+description: Push to origin after completing code changes
+alwaysApply: true
+---
+
+After finishing a set of code changes for this repo, commit (when appropriate) and `git push -u origin HEAD` so the remote (and Vercel) stay up to date. Do not wait for the user to ask to push.

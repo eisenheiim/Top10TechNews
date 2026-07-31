@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -12,7 +13,14 @@ from urllib.parse import urlparse
 from pipeline import run
 
 ROOT = Path(__file__).parent
-PAYLOAD_PATH = ROOT / "ui_payload.json"
+
+
+def _writable_root() -> Path:
+    if os.getenv("VERCEL"):
+        return Path("/tmp/top10technews")
+    return ROOT
+
+
 PORT = 8765
 
 GRAPH_MERMAID = """
@@ -21,36 +29,66 @@ flowchart LR
   classDef source fill:#1a2e24,stroke:#7fd4a8,stroke-width:1px,color:#e8f2ea
   classDef node fill:#163028,stroke:#c8f560,stroke-width:1px,color:#e8f2ea
   classDef llm fill:#24361f,stroke:#c8f560,stroke-width:1.5px,color:#c8f560
+  classDef route fill:#1e3328,stroke:#7fd4a8,stroke-width:1px,color:#e8f2ea
+  classDef decide fill:#2a2410,stroke:#c8f560,stroke-width:1.5px,color:#c8f560
 
   START([Start]):::startEnd
 
   subgraph Collect["collect_items"]
     direction TB
-    HN["Hacker News<br/>5 stories"]:::source
-    RSS["RSS feeds<br/>OpenAI · DeepMind · Google AI<br/>HF · MSR"]:::source
-    Merge["merge · max 10"]:::node
+    HN["Hacker News"]:::source
+    RSS["RSS feeds"]:::source
+    Merge["merge · keep 10"]:::node
     HN --> Merge
     RSS --> Merge
   end
 
+  Classify[classify_items]:::llm
+
+  subgraph Routes["rewrite by category"]
+    direction TB
+    R[rewrite_research]:::route
+    P[rewrite_product]:::route
+    T[rewrite_tools]:::route
+  end
+
   Summarize[summarize]:::llm
-  Rewrite[rewrite_items]:::llm
+  Gate{{"revision_pass?"}}:::decide
+  Revise[revise]:::llm
   Assemble[assemble_ui_payload]:::node
   ENDNODE([End]):::startEnd
 
-  START --> Collect
-  Collect --> Summarize --> Rewrite --> Assemble --> ENDNODE
+  START --> Collect --> Classify
+  Classify --> R
+  Classify --> P
+  Classify --> T
+  R --> Summarize
+  P --> Summarize
+  T --> Summarize
+  Summarize --> Gate
+  Gate -->|"0 · draft"| Revise
+  Revise -->|"recommendations"| Summarize
+  Gate -->|"1 · final"| Assemble --> ENDNODE
 """.strip()
 
 
 def load_payload() -> dict:
-    if PAYLOAD_PATH.exists():
-        return json.loads(PAYLOAD_PATH.read_text(encoding="utf-8"))
-    return {"summary": "", "items": []}
+    path = _writable_root() / "ui_payload.json"
+    if path.exists():
+        return json.loads(path.read_text(encoding="utf-8"))
+    for candidate in (
+        ROOT / "history" / "latest.json",
+        _writable_root() / "history" / "latest.json",
+    ):
+        if candidate.exists():
+            return json.loads(candidate.read_text(encoding="utf-8"))
+    return {"summary": "", "items": [], "recommendations": []}
 
 
 def save_payload(payload: dict) -> None:
-    PAYLOAD_PATH.write_text(
+    root = _writable_root()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "ui_payload.json").write_text(
         json.dumps(payload, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )
@@ -60,6 +98,7 @@ def render_html(payload: dict, error: str = "") -> str:
     items_html = []
     for item in payload.get("items") or []:
         source = html.escape(item.get("source", ""))
+        category = html.escape(item.get("category", ""))
         rewritten = html.escape(item.get("rewritten") or item.get("original") or "")
         original = html.escape(item.get("original") or "")
         url = html.escape(item.get("url") or "#", quote=True)
@@ -67,13 +106,14 @@ def render_html(payload: dict, error: str = "") -> str:
             f"""
             <article class="item">
               <div class="item-top">
+                <span class="cat">{category}</span>
                 <a class="source" href="{url}" target="_blank" rel="noreferrer">{source}</a>
-                <details>
-                  <summary>orig</summary>
-                  <p class="original">{original}</p>
-                </details>
               </div>
               <p class="rewritten">{rewritten}</p>
+              <details>
+                <summary>orig</summary>
+                <p class="original">{original}</p>
+              </details>
             </article>
             """
         )
@@ -88,7 +128,7 @@ def render_html(payload: dict, error: str = "") -> str:
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ConnectSummary</title>
+  <title>Top10TechNews</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Fragment+Mono:wght@400&display=swap" rel="stylesheet" />
@@ -117,8 +157,8 @@ def render_html(payload: dict, error: str = "") -> str:
       flowchart: {{
         curve: "basis",
         padding: 8,
-        nodeSpacing: 22,
-        rankSpacing: 28,
+        nodeSpacing: 20,
+        rankSpacing: 26,
         htmlLabels: true
       }}
     }});
@@ -151,7 +191,7 @@ def render_html(payload: dict, error: str = "") -> str:
         linear-gradient(180deg, var(--bg0), var(--bg1));
     }}
     main {{
-      width: min(860px, calc(100% - 1.5rem));
+      width: min(960px, calc(100% - 1.5rem));
       margin: 0 auto;
       padding: 1rem 0 1.5rem;
     }}
@@ -162,19 +202,12 @@ def render_html(payload: dict, error: str = "") -> str:
       gap: 0.75rem;
       margin-bottom: 0.75rem;
     }}
-    .brand-wrap {{ min-width: 0; }}
     .brand {{
       font-family: "Fragment Mono", monospace;
-      font-size: 1.25rem;
+      font-size: 1.35rem;
       letter-spacing: -0.03em;
       margin: 0;
       line-height: 1.1;
-    }}
-    .lead {{
-      color: var(--muted);
-      margin: 0.15rem 0 0;
-      font-size: 0.8rem;
-      line-height: 1.3;
     }}
     .actions {{
       display: flex;
@@ -252,44 +285,79 @@ def render_html(payload: dict, error: str = "") -> str:
     }}
     details.graph-drawer .mermaid svg {{
       max-width: 100%;
-      max-height: 280px;
+      max-height: 320px;
       height: auto;
     }}
-    .item {{
-      padding: 0.45rem 0;
-      border-bottom: 1px solid var(--line);
+    .items-grid {{
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.65rem;
     }}
-    .item:last-child {{ border-bottom: 0; }}
+    @media (max-width: 720px) {{
+      .items-grid {{ grid-template-columns: 1fr; }}
+      .item {{ aspect-ratio: auto; min-height: 200px; }}
+    }}
+    .item {{
+      aspect-ratio: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      padding: 0.7rem;
+      border: 1px solid var(--line);
+      background: rgba(11, 18, 16, 0.45);
+      overflow: hidden;
+    }}
     .item-top {{
       display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 0.5rem;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.25rem;
+      flex-shrink: 0;
+    }}
+    .cat {{
+      font-family: "Fragment Mono", monospace;
+      font-size: 0.62rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #102016;
+      background: var(--accent);
+      padding: 0.08rem 0.3rem;
     }}
     .source {{
       color: var(--accent);
       text-decoration: none;
       font-family: "Fragment Mono", monospace;
-      font-size: 0.72rem;
+      font-size: 0.68rem;
+      word-break: break-word;
     }}
     .rewritten {{
-      margin: 0.2rem 0 0;
-      line-height: 1.35;
-      font-size: 0.86rem;
+      margin: 0;
+      flex: 1;
+      min-height: 0;
+      overflow: hidden;
+      line-height: 1.3;
+      font-size: 0.78rem;
     }}
-    details {{ position: relative; }}
-    details summary {{
+    .item details {{
+      flex-shrink: 0;
+      margin-top: auto;
+    }}
+    .item details summary {{
       cursor: pointer;
       color: var(--muted);
-      font-size: 0.7rem;
+      font-size: 0.68rem;
       list-style: none;
     }}
-    details summary::-webkit-details-marker {{ display: none; }}
+    .item details summary::-webkit-details-marker {{ display: none; }}
     .original {{
       color: var(--muted);
-      line-height: 1.35;
-      margin: 0.35rem 0 0;
-      font-size: 0.78rem;
+      line-height: 1.3;
+      margin: 0.3rem 0 0;
+      font-size: 0.72rem;
+      overflow: hidden;
+    }}
+    .items-panel {{
+      padding: 0.65rem;
     }}
     .error {{
       color: #ffb4a8;
@@ -300,16 +368,13 @@ def render_html(payload: dict, error: str = "") -> str:
       font-size: 0.75rem;
       margin: 0 0 0.5rem;
     }}
-    .empty {{ color: var(--muted); }}
+    .empty {{ color: var(--muted); margin: 0; }}
   </style>
 </head>
 <body>
   <main>
     <div class="top">
-      <div class="brand-wrap">
-        <h1 class="brand">ConnectSummary</h1>
-        <p class="lead">HN + RSS → summarize → rewrite</p>
-      </div>
+      <h1 class="brand">Top10TechNews</h1>
       <div class="actions">
         <form method="post" action="/refresh">
           <button type="submit">Run</button>
@@ -337,8 +402,10 @@ def render_html(payload: dict, error: str = "") -> str:
 
     <section>
       <h2>Items</h2>
-      <div class="panel">
-        {items_block}
+      <div class="panel items-panel">
+        <div class="items-grid">
+          {items_block}
+        </div>
       </div>
     </section>
   </main>
@@ -376,7 +443,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         error = ""
         try:
-            payload = run()
+            payload = run(save=True)
             save_payload(payload)
         except Exception:
             error = traceback.format_exc()
