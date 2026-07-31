@@ -100,7 +100,6 @@ def render_html(payload: dict, error: str = "") -> str:
         source = html.escape(item.get("source", ""))
         category = html.escape(item.get("category", ""))
         rewritten = html.escape(item.get("rewritten") or item.get("original") or "")
-        original = html.escape(item.get("original") or "")
         url = html.escape(item.get("url") or "#", quote=True)
         items_html.append(
             f"""
@@ -108,10 +107,6 @@ def render_html(payload: dict, error: str = "") -> str:
               <span class="cat">{category}</span>
               <a class="source" href="{url}" target="_blank" rel="noreferrer">{source}</a>
               <p class="lede">{rewritten}</p>
-              <details>
-                <summary>Original headline</summary>
-                <p class="original">{original}</p>
-              </details>
             </article>
             """
         )
@@ -213,16 +208,11 @@ def render_html(payload: dict, error: str = "") -> str:
       line-height: 1;
       color: var(--ink);
     }}
-    .actions {{
-      display: flex;
-      gap: 0.5rem;
-      flex-shrink: 0;
-    }}
-    button, .ghost, details.graph-drawer > summary {{
+    details.graph-drawer > summary {{
       appearance: none;
       border: 1.5px solid var(--ink);
-      background: var(--ink);
-      color: #fff;
+      background: transparent;
+      color: var(--ink);
       font-family: "Instrument Sans", sans-serif;
       font-size: 0.92rem;
       font-weight: 600;
@@ -231,10 +221,6 @@ def render_html(payload: dict, error: str = "") -> str:
       text-decoration: none;
       line-height: 1.2;
       border-radius: 6px;
-    }}
-    .ghost, details.graph-drawer > summary {{
-      background: transparent;
-      color: var(--ink);
     }}
     details.graph-drawer {{
       margin: 0 0 1.25rem;
@@ -304,7 +290,6 @@ def render_html(payload: dict, error: str = "") -> str:
     }}
     @media (max-width: 640px) {{
       .stories-grid {{ grid-template-columns: 1fr; }}
-      header.masthead {{ flex-wrap: wrap; }}
     }}
     .story {{
       display: flex;
@@ -346,26 +331,6 @@ def render_html(payload: dict, error: str = "") -> str:
       line-height: 1.55;
       color: #2a342f;
     }}
-    .story details {{
-      margin-top: 0.25rem;
-      padding-top: 0.45rem;
-      border-top: 1px solid var(--line);
-    }}
-    .story details summary {{
-      cursor: pointer;
-      color: var(--muted);
-      font-family: "Instrument Sans", sans-serif;
-      font-size: 0.85rem;
-      font-weight: 600;
-      list-style: none;
-    }}
-    .story details summary::-webkit-details-marker {{ display: none; }}
-    .original {{
-      color: var(--muted);
-      line-height: 1.45;
-      margin: 0.45rem 0 0;
-      font-size: 0.95rem;
-    }}
     .error {{
       color: #7a2e28;
       background: #f8e9e7;
@@ -389,12 +354,6 @@ def render_html(payload: dict, error: str = "") -> str:
   <main>
     <header class="masthead">
       <h1 class="brand">Top10TechNews</h1>
-      <div class="actions">
-        <form method="post" action="/refresh">
-          <button type="submit">Run</button>
-        </form>
-        <a class="ghost" href="/">Reload</a>
-      </div>
     </header>
     {error_block}
 
