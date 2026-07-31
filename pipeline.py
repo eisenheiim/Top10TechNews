@@ -328,7 +328,11 @@ def _select_digest_items(
     keep_ids: list[str],
     target: int = TARGET_ITEMS,
 ) -> tuple[list[RewrittenItem], list[RewrittenItem]]:
-    """Rank by LLM keep_ids, then fill from pool. Always keep up to `target` when possible."""
+    """Rank by LLM keep_ids, then fill from pool order up to `target`.
+
+    Returns exactly `target` items when len(pool) >= target; otherwise returns
+    the full pool (maximize — cannot invent items when sources under-deliver).
+    """
     by_id = {i["id"]: i for i in pool}
     ranked: list[RewrittenItem] = []
     seen: set[str] = set()

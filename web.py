@@ -38,7 +38,7 @@ flowchart LR
     direction TB
     HN["Hacker News"]:::source
     RSS["RSS feeds"]:::source
-    Merge["merge · keep 10"]:::node
+    Merge["merge · buffer 14"]:::node
     HN --> Merge
     RSS --> Merge
   end

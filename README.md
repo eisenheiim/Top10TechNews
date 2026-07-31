@@ -14,7 +14,7 @@ flowchart LR
     direction TB
     HN["Hacker News"]
     RSS["RSS feeds"]
-    Merge["merge · keep 10"]
+    Merge["merge · buffer 14"]
     HN --> Merge
     RSS --> Merge
   end
