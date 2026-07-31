@@ -26,6 +26,16 @@ jobs:
       - name: Install dependencies
         run: uv sync
 
+      # Writes history/YYYY-MM-DD.json + history/latest.json; Vercel redeploy picks up latest.json.
+      - name: Require OPENAI_API_KEY
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error::Add repo secret OPENAI_API_KEY (Settings → Secrets → Actions)"
+            exit 1
+          fi
+
       - name: Run digest pipeline
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}

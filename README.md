@@ -59,12 +59,24 @@ flowchart LR
 
 ## Daily schedule + archive
 
-`.github/workflows/daily-digest.yml` runs daily (and on `workflow_dispatch`), then commits digests to `history/YYYY-MM-DD.json` (+ `history/latest.json`).
+No need to click **Run** / **Reload** every day. The site updates itself:
+
+1. GitHub Actions (`.github/workflows/daily-digest.yml`) runs daily at **07:00 UTC** (`workflow_dispatch` also works).
+2. It runs `uv run python cli.py`, writes `history/YYYY-MM-DD.json` + `history/latest.json`, and commits/pushes.
+3. That push redeploys Vercel. On cold start the app loads committed `history/latest.json` (see `web.load_payload`) — no UI click required.
+
+**One-time setup**
+
+1. Repo → **Settings → Secrets and variables → Actions** → add `OPENAI_API_KEY` (same key as Vercel).
+2. Keep **Actions** enabled; the workflow already has `permissions: contents: write` so it can push `history/`.
+3. Confirm Vercel is connected to this GitHub repo / `main` so history commits trigger a redeploy.
+
+Manual **Run** on the site still works for an on-demand refresh (writes to `/tmp` on Vercel only).
 
 ## Deploy (Vercel)
 
 - Entrypoint: `app.py` (FastAPI)
-- Env: `OPENAI_API_KEY` (optional `OPENAI_MODEL`)
+- Env: `OPENAI_API_KEY` (optional `OPENAI_MODEL`) — also required as a **GitHub Actions** secret for the daily job
 - `vercel.json` sets `maxDuration: 300` for the pipeline
 
 ## Project layout
