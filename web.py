@@ -25,12 +25,12 @@ PORT = 8765
 
 GRAPH_MERMAID = """
 flowchart LR
-  classDef startEnd fill:#102016,stroke:#c8f560,stroke-width:1.5px,color:#e8f2ea
-  classDef source fill:#1a2e24,stroke:#7fd4a8,stroke-width:1px,color:#e8f2ea
-  classDef node fill:#163028,stroke:#c8f560,stroke-width:1px,color:#e8f2ea
-  classDef llm fill:#24361f,stroke:#c8f560,stroke-width:1.5px,color:#c8f560
-  classDef route fill:#1e3328,stroke:#7fd4a8,stroke-width:1px,color:#e8f2ea
-  classDef decide fill:#2a2410,stroke:#c8f560,stroke-width:1.5px,color:#c8f560
+  classDef startEnd fill:#1c2421,stroke:#1c2421,stroke-width:1.5px,color:#ffffff
+  classDef source fill:#e8f2f0,stroke:#1f6f63,stroke-width:1px,color:#1c2421
+  classDef node fill:#ffffff,stroke:#1f6f63,stroke-width:1px,color:#1c2421
+  classDef llm fill:#e5f2ef,stroke:#1f6f63,stroke-width:1.5px,color:#1f6f63
+  classDef route fill:#f3f6f5,stroke:#5c6b65,stroke-width:1px,color:#1c2421
+  classDef decide fill:#fff7e8,stroke:#1f6f63,stroke-width:1.5px,color:#1c2421
 
   START([Start]):::startEnd
 
@@ -104,14 +104,12 @@ def render_html(payload: dict, error: str = "") -> str:
         url = html.escape(item.get("url") or "#", quote=True)
         items_html.append(
             f"""
-            <article class="item">
-              <div class="item-top">
-                <span class="cat">{category}</span>
-                <a class="source" href="{url}" target="_blank" rel="noreferrer">{source}</a>
-              </div>
-              <p class="rewritten">{rewritten}</p>
+            <article class="story">
+              <span class="cat">{category}</span>
+              <a class="source" href="{url}" target="_blank" rel="noreferrer">{source}</a>
+              <p class="lede">{rewritten}</p>
               <details>
-                <summary>orig</summary>
+                <summary>Original headline</summary>
                 <p class="original">{original}</p>
               </details>
             </article>
@@ -131,7 +129,7 @@ def render_html(payload: dict, error: str = "") -> str:
   <title>Top10TechNews</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,600;0,9..40,700;1,9..40,400&family=Fragment+Mono:wght@400&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script>
     mermaid.initialize({{
@@ -139,26 +137,26 @@ def render_html(payload: dict, error: str = "") -> str:
       securityLevel: "loose",
       theme: "base",
       themeVariables: {{
-        darkMode: true,
-        background: "transparent",
-        primaryColor: "#163028",
-        primaryTextColor: "#e8f2ea",
-        primaryBorderColor: "#c8f560",
-        secondaryColor: "#1a2e24",
-        tertiaryColor: "#102016",
-        lineColor: "#9bb0a3",
-        textColor: "#e8f2ea",
-        fontFamily: "DM Sans, sans-serif",
-        fontSize: "12px",
-        clusterBkg: "rgba(19, 32, 27, 0.65)",
-        clusterBorder: "rgba(200, 245, 96, 0.35)",
-        titleColor: "#c8f560"
+        darkMode: false,
+        background: "#ffffff",
+        primaryColor: "#e8f2f0",
+        primaryTextColor: "#1c2421",
+        primaryBorderColor: "#1f6f63",
+        secondaryColor: "#f3f6f5",
+        tertiaryColor: "#ffffff",
+        lineColor: "#6b7c76",
+        textColor: "#1c2421",
+        fontFamily: "Instrument Sans, sans-serif",
+        fontSize: "13px",
+        clusterBkg: "#f3f6f5",
+        clusterBorder: "#c5d4cf",
+        titleColor: "#1f6f63"
       }},
       flowchart: {{
         curve: "basis",
-        padding: 8,
-        nodeSpacing: 20,
-        rankSpacing: 26,
+        padding: 10,
+        nodeSpacing: 22,
+        rankSpacing: 28,
         htmlLabels: true
       }}
     }});
@@ -172,112 +170,93 @@ def render_html(payload: dict, error: str = "") -> str:
   </script>
   <style>
     :root {{
-      --bg0: #0b1210;
-      --bg1: #13201b;
-      --ink: #e8f2ea;
-      --muted: #9bb0a3;
-      --accent: #c8f560;
-      --line: rgba(200, 245, 96, 0.18);
-      --panel: rgba(19, 32, 27, 0.88);
+      --bg: #f3f6f5;
+      --paper: #ffffff;
+      --ink: #1c2421;
+      --muted: #5c6b65;
+      --accent: #1f6f63;
+      --accent-soft: #e5f2ef;
+      --line: #d5e0dc;
+      --shadow: 0 1px 2px rgba(28, 36, 33, 0.04);
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       color: var(--ink);
-      font-family: "DM Sans", sans-serif;
-      font-size: 14px;
+      font-family: "Source Serif 4", Georgia, serif;
+      font-size: 18px;
+      line-height: 1.65;
       background:
-        radial-gradient(900px 420px at 8% -10%, rgba(200, 245, 96, 0.10), transparent 55%),
-        linear-gradient(180deg, var(--bg0), var(--bg1));
+        radial-gradient(900px 420px at 0% 0%, rgba(31, 111, 99, 0.08), transparent 55%),
+        linear-gradient(180deg, #eef3f1 0%, var(--bg) 40%, #e9efed 100%);
     }}
     main {{
-      width: min(960px, calc(100% - 1.5rem));
+      width: min(1100px, calc(100% - 2rem));
       margin: 0 auto;
-      padding: 1rem 0 1.5rem;
+      padding: 1.5rem 0 3rem;
     }}
-    .top {{
+    header.masthead {{
       display: flex;
       align-items: center;
       justify-content: space-between;
-      gap: 0.75rem;
-      margin-bottom: 0.75rem;
+      gap: 1rem;
+      padding-bottom: 1.1rem;
+      margin-bottom: 1.4rem;
+      border-bottom: 3px solid var(--ink);
     }}
     .brand {{
-      font-family: "Fragment Mono", monospace;
-      font-size: 1.35rem;
-      letter-spacing: -0.03em;
+      font-family: "Instrument Sans", sans-serif;
+      font-size: clamp(1.8rem, 4vw, 2.4rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
       margin: 0;
-      line-height: 1.1;
+      line-height: 1;
+      color: var(--ink);
     }}
     .actions {{
       display: flex;
-      gap: 0.4rem;
+      gap: 0.5rem;
       flex-shrink: 0;
     }}
-    button, .ghost {{
+    button, .ghost, details.graph-drawer > summary {{
       appearance: none;
-      border: 1px solid var(--accent);
-      background: var(--accent);
-      color: #102016;
-      font: inherit;
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding: 0.28rem 0.55rem;
+      border: 1.5px solid var(--ink);
+      background: var(--ink);
+      color: #fff;
+      font-family: "Instrument Sans", sans-serif;
+      font-size: 0.92rem;
+      font-weight: 600;
+      padding: 0.55rem 0.9rem;
       cursor: pointer;
       text-decoration: none;
       line-height: 1.2;
+      border-radius: 6px;
     }}
-    .ghost {{
+    .ghost, details.graph-drawer > summary {{
       background: transparent;
-      color: var(--accent);
-    }}
-    section {{
-      border-top: 1px solid var(--line);
-      padding: 0.65rem 0;
-    }}
-    h2 {{
-      font-size: 0.68rem;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--accent);
-      margin: 0 0 0.4rem;
-      font-family: "Fragment Mono", monospace;
-    }}
-    .panel {{
-      background: var(--panel);
-      border: 1px solid var(--line);
-      padding: 0.55rem 0.7rem;
-    }}
-    .summary {{
-      font-size: 0.9rem;
-      line-height: 1.4;
-      margin: 0;
+      color: var(--ink);
     }}
     details.graph-drawer {{
-      margin: 0 0 0.65rem;
+      margin: 0 0 1.25rem;
     }}
     details.graph-drawer > summary {{
       display: inline-block;
-      border: 1px solid var(--accent);
-      background: transparent;
-      color: var(--accent);
-      font-size: 0.75rem;
-      font-weight: 700;
-      padding: 0.28rem 0.55rem;
-      cursor: pointer;
-      line-height: 1.2;
       list-style: none;
-      margin-bottom: 0.45rem;
+      margin-bottom: 0.65rem;
     }}
     details.graph-drawer > summary::-webkit-details-marker {{ display: none; }}
     details.graph-drawer[open] > summary {{
       background: var(--accent);
-      color: #102016;
-      margin-bottom: 0.5rem;
+      border-color: var(--accent);
+      color: #fff;
     }}
     details.graph-drawer .panel {{
-      padding: 0.55rem 0.6rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 0.9rem;
       overflow-x: auto;
+      box-shadow: var(--shadow);
     }}
     details.graph-drawer .mermaid {{
       display: flex;
@@ -285,95 +264,130 @@ def render_html(payload: dict, error: str = "") -> str:
     }}
     details.graph-drawer .mermaid svg {{
       max-width: 100%;
-      max-height: 320px;
+      max-height: 340px;
       height: auto;
     }}
-    .items-grid {{
+    .lead-block {{
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 1.4rem 1.6rem;
+      margin-bottom: 1.75rem;
+      box-shadow: var(--shadow);
+    }}
+    .section-label {{
+      font-family: "Instrument Sans", sans-serif;
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin: 0 0 0.7rem;
+    }}
+    .summary {{
+      font-size: clamp(1.2rem, 2.2vw, 1.4rem);
+      line-height: 1.55;
+      margin: 0;
+      font-weight: 600;
+      color: var(--ink);
+    }}
+    .stories-label {{
+      margin: 0 0 0.85rem;
+    }}
+    .stories-grid {{
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 0.65rem;
+      gap: 1.1rem;
     }}
-    @media (max-width: 720px) {{
-      .items-grid {{ grid-template-columns: 1fr; }}
-      .item {{ aspect-ratio: auto; min-height: 200px; }}
+    @media (max-width: 900px) {{
+      .stories-grid {{ grid-template-columns: 1fr 1fr; }}
     }}
-    .item {{
-      aspect-ratio: 1;
+    @media (max-width: 640px) {{
+      .stories-grid {{ grid-template-columns: 1fr; }}
+      header.masthead {{ flex-wrap: wrap; }}
+    }}
+    .story {{
       display: flex;
       flex-direction: column;
-      gap: 0.35rem;
-      padding: 0.7rem;
+      gap: 0.55rem;
+      min-height: 100%;
+      padding: 1.2rem 1.25rem 1.1rem;
+      background: var(--paper);
       border: 1px solid var(--line);
-      background: rgba(11, 18, 16, 0.45);
-      overflow: hidden;
-    }}
-    .item-top {{
-      display: flex;
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.25rem;
-      flex-shrink: 0;
+      border-radius: 12px;
+      box-shadow: var(--shadow);
     }}
     .cat {{
-      font-family: "Fragment Mono", monospace;
-      font-size: 0.62rem;
+      align-self: flex-start;
+      font-family: "Instrument Sans", sans-serif;
+      font-size: 0.75rem;
+      font-weight: 700;
       text-transform: uppercase;
-      letter-spacing: 0.04em;
-      color: #102016;
-      background: var(--accent);
-      padding: 0.08rem 0.3rem;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      background: var(--accent-soft);
+      padding: 0.28rem 0.5rem;
+      border-radius: 4px;
     }}
     .source {{
-      color: var(--accent);
+      color: var(--ink);
       text-decoration: none;
-      font-family: "Fragment Mono", monospace;
-      font-size: 0.68rem;
+      font-family: "Instrument Sans", sans-serif;
+      font-size: 1.05rem;
+      font-weight: 700;
+      line-height: 1.3;
       word-break: break-word;
     }}
-    .rewritten {{
+    .source:hover {{ color: var(--accent); }}
+    .lede {{
       margin: 0;
       flex: 1;
-      min-height: 0;
-      overflow: hidden;
-      line-height: 1.3;
-      font-size: 0.78rem;
+      font-size: 1.05rem;
+      line-height: 1.55;
+      color: #2a342f;
     }}
-    .item details {{
-      flex-shrink: 0;
-      margin-top: auto;
+    .story details {{
+      margin-top: 0.25rem;
+      padding-top: 0.45rem;
+      border-top: 1px solid var(--line);
     }}
-    .item details summary {{
+    .story details summary {{
       cursor: pointer;
       color: var(--muted);
-      font-size: 0.68rem;
+      font-family: "Instrument Sans", sans-serif;
+      font-size: 0.85rem;
+      font-weight: 600;
       list-style: none;
     }}
-    .item details summary::-webkit-details-marker {{ display: none; }}
+    .story details summary::-webkit-details-marker {{ display: none; }}
     .original {{
       color: var(--muted);
-      line-height: 1.3;
-      margin: 0.3rem 0 0;
-      font-size: 0.72rem;
-      overflow: hidden;
-    }}
-    .items-panel {{
-      padding: 0.65rem;
+      line-height: 1.45;
+      margin: 0.45rem 0 0;
+      font-size: 0.95rem;
     }}
     .error {{
-      color: #ffb4a8;
-      background: rgba(120, 40, 30, 0.35);
-      border: 1px solid rgba(255, 180, 168, 0.35);
-      padding: 0.5rem 0.7rem;
+      color: #7a2e28;
+      background: #f8e9e7;
+      border: 1px solid #e2b7b2;
+      border-radius: 8px;
+      padding: 0.8rem 1rem;
       white-space: pre-wrap;
-      font-size: 0.75rem;
-      margin: 0 0 0.5rem;
+      font-family: "Instrument Sans", sans-serif;
+      font-size: 0.9rem;
+      margin: 0 0 1rem;
     }}
-    .empty {{ color: var(--muted); margin: 0; }}
+    .empty {{
+      color: var(--muted);
+      margin: 0;
+      grid-column: 1 / -1;
+      font-family: "Instrument Sans", sans-serif;
+    }}
   </style>
 </head>
 <body>
   <main>
-    <div class="top">
+    <header class="masthead">
       <h1 class="brand">Top10TechNews</h1>
       <div class="actions">
         <form method="post" action="/refresh">
@@ -381,7 +395,7 @@ def render_html(payload: dict, error: str = "") -> str:
         </form>
         <a class="ghost" href="/">Reload</a>
       </div>
-    </div>
+    </header>
     {error_block}
 
     <details class="graph-drawer" id="graph-drawer">
@@ -393,19 +407,15 @@ def render_html(payload: dict, error: str = "") -> str:
       </div>
     </details>
 
-    <section>
-      <h2>Summary</h2>
-      <div class="panel">
-        <p class="summary">{summary}</p>
-      </div>
+    <section class="lead-block">
+      <p class="section-label">Today’s brief</p>
+      <p class="summary">{summary}</p>
     </section>
 
     <section>
-      <h2>Items</h2>
-      <div class="panel items-panel">
-        <div class="items-grid">
-          {items_block}
-        </div>
+      <p class="section-label stories-label">Top stories</p>
+      <div class="stories-grid">
+        {items_block}
       </div>
     </section>
   </main>
