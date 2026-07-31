@@ -323,7 +323,42 @@ def summarize(state: GraphState) -> dict[str, Any]:
     return {"summary": str(msg.content).strip()}
 
 
+def _select_digest_items(
+    pool: list[RewrittenItem],
+    keep_ids: list[str],
+    target: int = TARGET_ITEMS,
+) -> tuple[list[RewrittenItem], list[RewrittenItem]]:
+    """Rank by LLM keep_ids, then fill from pool. Always keep up to `target` when possible."""
+    by_id = {i["id"]: i for i in pool}
+    ranked: list[RewrittenItem] = []
+    seen: set[str] = set()
+
+    for item_id in keep_ids:
+        item = by_id.get(item_id)
+        if item is None or item_id in seen:
+            continue
+        ranked.append(item)
+        seen.add(item_id)
+
+    for item in pool:
+        if item["id"] in seen:
+            continue
+        ranked.append(item)
+        seen.add(item["id"])
+
+    # Only drop surplus above the target — never shrink below target when pool allows.
+    kept = ranked[:target]
+    kept_ids = {i["id"] for i in kept}
+    dropped = [i for i in ranked[target:] if i["id"] not in kept_ids]
+    # Preserve any pool leftovers not already ranked (shouldn't happen, but keep deterministic).
+    for item in pool:
+        if item["id"] not in kept_ids and item["id"] not in {d["id"] for d in dropped}:
+            dropped.append(item)
+    return kept, dropped
+
+
 def revise(state: GraphState) -> dict[str, Any]:
+    pool = state["rewritten"]
     payload = {
         "summary": state["summary"],
         "items": [
@@ -333,30 +368,22 @@ def revise(state: GraphState) -> dict[str, Any]:
                 "source": i["source"],
                 "rewritten": i["rewritten"],
             }
-            for i in state["rewritten"]
+            for i in pool
         ],
     }
     prompt = (
         "You are a digest editor. Review the draft summary and items.\n"
-        f"1) Keep exactly {TARGET_ITEMS} strongest AI/tech news items.\n"
-        "2) Drop noisy, redundant, off-topic, or low-signal items.\n"
-        "3) Give concrete recommendations so summarize can regenerate a better summary.\n"
+        f"1) Rank the strongest AI/tech news items by putting the best ids first in keep_ids.\n"
+        f"2) keep_ids must include exactly {TARGET_ITEMS} ids when at least "
+        f"{TARGET_ITEMS} items are available (never fewer).\n"
+        "3) Only list ids in drop_ids when they are surplus beyond that quota "
+        "(noisy, redundant, off-topic, or low-signal).\n"
+        "4) Give concrete recommendations so summarize can regenerate a better summary.\n"
         "Do not write the final summary yourself.\n\n"
         f"{json.dumps(payload, ensure_ascii=False)}"
     )
     result = _llm().with_structured_output(ReviseResult).invoke(prompt)
-    by_id = {i["id"]: i for i in state["rewritten"]}
-    kept = [by_id[i] for i in result.keep_ids if i in by_id]
-    # Ensure exactly TARGET_ITEMS when possible
-    if len(kept) < TARGET_ITEMS:
-        for item in state["rewritten"]:
-            if item["id"] not in {k["id"] for k in kept}:
-                kept.append(item)
-            if len(kept) >= TARGET_ITEMS:
-                break
-    kept = kept[:TARGET_ITEMS]
-    kept_ids = {i["id"] for i in kept}
-    dropped = [i for i in state["rewritten"] if i["id"] not in kept_ids]
+    kept, dropped = _select_digest_items(pool, result.keep_ids, TARGET_ITEMS)
     return {
         "final_items": kept,
         "dropped": dropped,
@@ -372,16 +399,29 @@ def route_after_summarize(state: GraphState) -> str:
 
 
 def assemble_ui_payload(state: GraphState) -> dict[str, Any]:
-    items = state.get("final_items") or state.get("rewritten") or []
+    items = list(state.get("final_items") or [])
+    # Backfill if revise somehow under-filled — digest should hit TARGET_ITEMS when sources allow.
+    if len(items) < TARGET_ITEMS:
+        items, _ = _select_digest_items(
+            list(state.get("rewritten") or []) + list(state.get("dropped") or []),
+            [i["id"] for i in items],
+            TARGET_ITEMS,
+        )
     order = {"research": 0, "product": 1, "tools": 2}
     items = sorted(items, key=lambda i: (order.get(i.get("category", "tools"), 9), i["source"]))
     items = items[:TARGET_ITEMS]
+    kept_ids = {i["id"] for i in items}
+    dropped = [
+        i
+        for i in (state.get("dropped") or state.get("rewritten") or [])
+        if i["id"] not in kept_ids
+    ]
     return {
         "ui_payload": {
             "summary": state["summary"],
             "recommendations": state.get("recommendations") or [],
             "items": items,
-            "dropped": state.get("dropped") or [],
+            "dropped": dropped,
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
     }

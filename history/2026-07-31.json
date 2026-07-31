@@ -59,9 +59,7 @@
       "category": "product",
       "original": "Advancing responsible AI across Europe. OpenAI shares how its safety, security, transparency, and provenance practices support responsible AI governance in Europe. The work will continue as the EU AI Act advances.",
       "rewritten": "OpenAI is committed to promoting responsible AI practices across Europe. They highlight their efforts in safety, security, transparency, and provenance to support effective governance of AI technologies as the EU AI Act progresses. This initiative aims to ensure that AI development aligns with ethical standards and regulations."
-    }
-  ],
-  "dropped": [
+    },
     {
       "id": "hn-49074416",
       "source": "HN/@BubbleRings",
@@ -99,5 +97,6 @@
       "rewritten": "Tuneloop is a command-line interface (CLI) tool designed for analyzing transcripts from coding agent sessions. It allows users to review and understand the interactions that took place during these sessions."
     }
   ],
+  "dropped": [],
   "generated_at": "2026-07-31T12:13:49.860226+00:00"
 }
