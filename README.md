@@ -72,7 +72,7 @@ flowchart LR
 ```text
 app.py                              # FastAPI / Vercel entry
 pipeline.py                         # LangGraph state, nodes, edges
-main.py                             # CLI + history write
+cli.py                              # CLI + history write
 web.py                              # HTML UI helpers + local server
 history/                            # digest archive
 .github/workflows/daily-digest.yml  # daily cron
